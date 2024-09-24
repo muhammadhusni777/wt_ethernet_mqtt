@@ -3,9 +3,16 @@
 // Debug Level from 0 to 4
 #define ETHERNET_WEBSERVER_LOGLEVEL       3
 
+#include "esp_task_wdt.h"
+
+// Define the watchdog timeout period (in seconds)
+#define WATCHDOG_TIMEOUT 10
+
+
+
 #include <WebServer_WT32_ETH01.h>
 
-WebServer server(80);
+//WebServer server(80);
 
 // Select the IP address according to your local network
 IPAddress myIP(123, 45, 0, 101);
@@ -22,81 +29,68 @@ IPAddress myDNS(8, 8, 8, 8);
 const char* mqttServer = "123.45.0.10";        // Broker address
 //const char* mqttServer = "broker.shiftr.io";        // Broker address
 
-const char *ID        = "MQTTClient_SSL-Client";  // Name of our device, must be unique
-const char *TOPIC     = "MQTT_Pub";               // Topic to subcribe to
-const char *subTopic  = "MQTT_Sub";               // Topic to subcribe to
 
 //IPAddress mqttServer(172, 16, 0, 2);
 
-void callback(char* topic, byte* payload, unsigned int length)
-{
+byte mac[]    = {  0xDE, 0xED, 0xBA, 0xFE, 0xFE, 0xE6 }; 
+
+unsigned long message_time;
+unsigned long message_time_prev;
+
+
+unsigned long time_now;
+unsigned long time_elapsed;
+unsigned long time_prev;
+
+unsigned long time_send;
+unsigned long time_send_prev;
+int time_message = 1000;
+
+void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("Message arrived [");
   Serial.print(topic);
   Serial.print("] ");
+  String messageTemp;
+  
 
-  for (unsigned int i = 0; i < length; i++)
-  {
-    Serial.print((char)payload[i]);
-  }
+  if (String(topic) == "lamp1") {
 
-  Serial.println();
+   Serial.println(messageTemp.toInt());
+   }
+   
+
+ messageTemp ="";
 }
 
-WiFiClient    ethClient;
-PubSubClient    client(mqttServer, 1883, callback, ethClient);
+WiFiClient ethClient;
+PubSubClient client(mqttServer, 1883, callback, ethClient);
 
-void reconnect()
-{
+void reconnect() {
   // Loop until we're reconnected
-  while (!client.connected())
-  {
-    Serial.print("Attempting MQTT connection to ");
-    Serial.print(mqttServer);
-
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
     // Attempt to connect
-    if (client.connect(ID, "try", "try"))
-    {
-      Serial.println("...connected");
+    if (client.connect("CLMS_Client")) {
+      Serial.println("connected");
+      client.subscribe("lamp1");
 
-      // Once connected, publish an announcement...
-      String data = "Hello from MQTTClient_SSL on " + String(BOARD_NAME);
-
-      client.publish(TOPIC, data.c_str());
-
-      //Serial.println("Published connection message successfully!");
-      //Serial.print("Subcribed to: ");
-      //Serial.println(subTopic);
-
-      // This is a workaround to address https://github.com/OPEnSLab-OSU/SSLClient/issues/9
-      //ethClientSSL.flush();
-      // ... and resubscribe
-      client.subscribe(subTopic);
-      // for loopback testing
-      client.subscribe(TOPIC);
-      // This is a workaround to address https://github.com/OPEnSLab-OSU/SSLClient/issues/9
-      //ethClientSSL.flush();
-    }
-    else
-    {
-      Serial.print("...failed, rc=");
+    } else {
+      Serial.print("failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
-
       // Wait 5 seconds before retrying
       delay(5000);
     }
-  }
+  } 
 }
 
-void setup()
-{
+
+void setup() {
+
   // Open serial communications and wait for port to open:
   Serial.begin(115200);
 
   while (!Serial);
-
-  // Using this if Serial debugging is not necessary or not using Serial port
-  //while (!Serial && (millis() < 3000));
 
   Serial.print("\nStarting MQTTClient_Basic on " + String(ARDUINO_BOARD));
   Serial.println(" with " + String(SHIELD_TYPE));
@@ -121,39 +115,32 @@ void setup()
 
   // Allow the hardware to sort itself out
   delay(1500);
+  // Initialize the watchdog timer
+  esp_task_wdt_init(WATCHDOG_TIMEOUT, true); // Set timeout and panic
+  esp_task_wdt_add(NULL); // Add the current task to the watchdog
+
+  Serial.println("Watchdog Timer Initialized");
 }
 
-#define MQTT_PUBLISH_INTERVAL_MS       1000L
 
-String data         = "Hello from MQTTClient_Basic on " + String(BOARD_NAME) + " with " + String(SHIELD_TYPE);
-const char *pubData = data.c_str();
 
-unsigned long lastMsg = 0;
+void loop() {
+  time_now = millis();
 
-void loop()
-{
-  static unsigned long now;
-
-  if (!client.connected())
-  {
+  time_send = millis() - time_send_prev;
+  
+  if (!client.connected()) {
     reconnect();
   }
 
-  // Sending Data
-  now = millis();
-
-  if (now - lastMsg > MQTT_PUBLISH_INTERVAL_MS)
-  {
-    lastMsg = now;
-
-    if (!client.publish(TOPIC, pubData))
-    {
-      Serial.println("Message failed to send.");
-    }
-
-    Serial.print("Message Send : " + String(TOPIC) + " => ");
-    Serial.println(data);
+  if (time_send > time_message){
+    client.publish("system","on");
+    time_send_prev = millis();
   }
 
+
+
+
+  esp_task_wdt_reset();
   client.loop();
 }
